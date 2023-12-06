@@ -30,12 +30,17 @@ impl TryFrom<Vec<u64>> for Mapping {
         if value.len() != 3 {
             Err(format!("Mapping created with {} values, expected 3", value.len()))
         } else {
-            Ok(Mapping {
+            Ok(Self {
                 dest_start: value[0],
                 src_start: value[1],
                 range_len: value[2]
             })
         }
+    }
+}
+impl From<(u64, u64, u64)> for Mapping {
+    fn from((dest_start, src_start, range_len): (u64, u64, u64)) -> Self {
+        Self { dest_start, src_start, range_len }
     }
 }
 
@@ -101,8 +106,8 @@ fn part1(input: &str) -> u64 {
     }).min().unwrap()
 }
 
-#[aoc(day5, part2)]
-fn part2(input: &str) -> u64 {
+#[aoc(day5, part2, naive)]
+fn part2_naive(input: &str) -> u64 {
     let (seed_list, maps_vec) = parse(input);
 
     seed_list.iter().tuples().flat_map(
@@ -120,6 +125,60 @@ fn part2(input: &str) -> u64 {
     }).min().unwrap()
 }
 
+fn process_ranges(input_pairs: &mut Vec<(u64, u64)>, mappings: &Vec<Mapping>) -> Vec<(u64, u64)> {
+    let mut output_pairs = vec![];
+    'grab_input: while let Some((seed_start, seed_range_len)) = input_pairs.pop() {
+        let seed_end = seed_start + seed_range_len;
+        // three scenarios we care about:
+        //   - first is contained in a mapping
+        //   - second is contained in a mapping, but first is not
+        //   - a mapping is entirely contained between first and second
+        for mapping in mappings {
+            let map_src_end = mapping.src_start + mapping.range_len;
+            if seed_start >= mapping.src_start && seed_start < map_src_end {
+                // is second also contained in the mapping?
+                // if not, figure out what portion doesn't overlap and reprocess
+                if seed_end <= map_src_end {
+                    output_pairs.push((seed_start - mapping.src_start + mapping.dest_start, seed_range_len));
+                } else {
+                    output_pairs.push((seed_start - mapping.src_start + mapping.dest_start, map_src_end - seed_start));
+                    input_pairs.push((map_src_end, seed_end - mapping.src_start - mapping.range_len));
+                }
+                continue 'grab_input;
+            }
+
+            if seed_end > mapping.src_start && seed_end < map_src_end {
+                output_pairs.push((mapping.dest_start, seed_range_len + seed_start - mapping.src_start));
+                input_pairs.push((seed_start, mapping.src_start - seed_start));
+                continue 'grab_input;
+            }
+
+            if seed_start <= mapping.src_start && seed_end >= map_src_end {
+                output_pairs.push((mapping.dest_start, mapping.range_len));
+                input_pairs.push((seed_start, mapping.src_start - seed_start));
+                if seed_end - map_src_end > 0 {
+                    input_pairs.push((map_src_end, seed_end - map_src_end));
+                }
+                
+                continue 'grab_input;
+            }
+        }
+        
+        // if no mappings overlap with this range, it is not mapped and continues to the next stage as-is
+        output_pairs.push((seed_start, seed_range_len));
+    }
+    output_pairs
+}
+
+#[aoc(day5, part2, fast)]
+fn part2_fast(input: &str) -> u64 {
+    let (seed_list, maps_vec) = parse(input);
+
+    maps_vec.into_iter().fold(seed_list.into_iter().tuples().collect_vec(), |mut seeds, mappings| {
+        process_ranges(&mut seeds, &mappings)
+    }).into_iter().map(|(range_start, _)| range_start).min().unwrap()
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -131,15 +190,8 @@ mod tests {
         assert_eq!(parse_map("seed-to-soil map:
 50 98 2
 52 50 48"), Ok(("", vec![
-            Mapping {
-                dest_start: 50,
-                src_start: 98,
-                range_len: 2
-            }, Mapping {
-                dest_start: 52,
-                src_start: 50,
-                range_len: 48
-            }
+            Mapping::from((50, 98, 2)),
+            Mapping::from((52, 50, 48))
         ])));
     }
 
@@ -181,8 +233,8 @@ humidity-to-location map:
     }
 
     #[test]
-    fn part2_example() {
-        assert_eq!(part2("seeds: 79 14 55 13
+    fn part2_naive_example() {
+        assert_eq!(part2_naive("seeds: 79 14 55 13
 
 seed-to-soil map:
 50 98 2
@@ -215,6 +267,72 @@ temperature-to-humidity map:
 humidity-to-location map:
 60 56 37
 56 93 4"), 46);
+    }
+
+    #[test]
+    fn test_process_ranges() {
+        assert_eq!(process_ranges(&mut vec![(79, 14), (55, 13)], &vec![
+            Mapping::from((50, 98, 2)),
+            Mapping::from((52, 50, 48)),
+        ]), vec![(57, 13), (81, 14)]);
+        assert_eq!(process_ranges(&mut vec![(57, 13), (81, 14)], &vec![
+            Mapping::from((0, 15, 37)),
+            Mapping::from((37, 52, 2)),
+            Mapping::from((39, 0, 15))
+        ]), vec![(81, 14), (57, 13)]);
+        assert_eq!(process_ranges(&mut vec![(81, 14), (57, 13)], &vec![
+            Mapping::from((49, 53, 8)),
+            Mapping::from((0, 11, 42)),
+            Mapping::from((42, 0, 7)),
+            Mapping::from((57, 7, 4))
+        ]), vec![(53, 4), (61, 9), (81, 14)]);
+        assert_eq!(process_ranges(&mut vec![(53, 4), (61, 9), (81, 14)], &vec![
+            Mapping::from((88, 18, 7)),
+            Mapping::from((18, 25, 70))
+        ]), vec![(74, 14), (54, 9), (46, 4)]);
+        assert_eq!(process_ranges(&mut vec![(74, 14), (54, 9), (46, 4)], &vec![
+            Mapping::from((45, 77, 23)),
+            Mapping::from((81, 45, 19)),
+            Mapping::from((68, 64, 13))
+        ]), vec![(82, 4), (90, 9), (45, 11), (78, 3)]);
+    }
+
+    #[test]
+    fn part2_fast_example() {
+        assert_eq!(part2_fast("seeds: 79 14 55 13
+
+seed-to-soil map:
+50 98 2
+52 50 48
+
+soil-to-fertilizer map:
+0 15 37
+37 52 2
+39 0 15
+
+fertilizer-to-water map:
+49 53 8
+0 11 42
+42 0 7
+57 7 4
+
+water-to-light map:
+88 18 7
+18 25 70
+
+light-to-temperature map:
+45 77 23
+81 45 19
+68 64 13
+
+temperature-to-humidity map:
+0 69 1
+1 0 69
+
+humidity-to-location map:
+60 56 37
+56 93 4
+"), 46);
     }
 
 }
