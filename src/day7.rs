@@ -146,7 +146,7 @@ fn parse_line(input: &str) -> IResult<&str, Hand> {
     ), |h| h.try_into())(input)
 }
 
-fn parse(input: &str) -> Vec<Hand> {
+fn parse_part1(input: &str) -> Vec<Hand> {
     let (_, hands) = all_consuming(
         separated_list1(line_ending, parse_line)
     )(input).unwrap();
@@ -157,7 +157,7 @@ fn parse(input: &str) -> Vec<Hand> {
 
 #[aoc(day7, part1)]
 fn part1(input: &str) -> u32 {
-    let mut hands = parse(input);
+    let mut hands = parse_part1(input);
     
     hands.sort_unstable();
 
@@ -166,20 +166,168 @@ fn part1(input: &str) -> u32 {
     })
 }
 
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum JokerCard {
+    Ace = 14,
+    King = 13,
+    Queen = 12,
+    Ten = 10,
+    Nine = 9,
+    Eight = 8,
+    Seven = 7,
+    Six = 6,
+    Five = 5,
+    Four = 4,
+    Three = 3,
+    Two = 2,
+    Joker = 1,
+}
+impl TryFrom<char> for JokerCard {
+    type Error = &'static str;
+    fn try_from(value: char) -> Result<Self, Self::Error> {
+        match value {
+            'A' => Ok(Self::Ace),
+            'K' => Ok(Self::King),
+            'Q' => Ok(Self::Queen),
+            'J' => Ok(Self::Joker),
+            'T' => Ok(Self::Ten),
+            '9' => Ok(Self::Nine),
+            '8' => Ok(Self::Eight),
+            '7' => Ok(Self::Seven),
+            '6' => Ok(Self::Six),
+            '5' => Ok(Self::Five),
+            '4' => Ok(Self::Four),
+            '3' => Ok(Self::Three),
+            '2' => Ok(Self::Two),
+            _ => Err("bad card value")
+        }
+    }
+}
+impl TryFrom<u8> for JokerCard {
+    type Error = &'static str;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Self::try_from(char::from(value))
+    }
+}
+
+#[derive(Debug)]
+struct JokerHand {
+    cards: Vec<JokerCard>,
+    hand_type: HandType,
+    bet: u32
+}
+impl JokerHand {
+    fn get_hand_type(cards: &Vec<JokerCard>) -> HandType {
+        let cards_map = cards.iter().counts();
+        let joker_count = *cards_map.get(&JokerCard::Joker).unwrap_or(&0);
+        let joker_filter = |(&k, &v)| {
+            if k != &JokerCard::Joker {
+                Some(v)
+            } else {
+                None
+            }
+        };
+        match cards_map.iter().filter_map(joker_filter).max().unwrap_or(0) + joker_count {
+            5 => HandType::FiveOfAKind,
+            4 => HandType::FourOfAKind,
+            3 => {
+                // do we have a pair to go along with the three matched cards?
+                match cards_map.iter().filter_map(joker_filter).min().unwrap() {
+                    2 => HandType::FullHouse,
+                    1 => HandType::ThreeOfAKind,
+                    _ => panic!("Expected between 1 and 2 additional cards to match with 3 already matching")
+                }
+            },
+            2 => {
+                if joker_count != 0 {
+                    // if we got to a max of 2 matched cards when adding jokers,
+                    // we must have 1 joker with a hand that would otherwise be a HighCard
+                    HandType::OnePair
+                } else {
+                    // do we have two pairs or just one?
+                    match cards_map.iter().filter_map(joker_filter).filter(|&c| c == 2).count() {
+                        2 => HandType::TwoPair,
+                        1 => HandType::OnePair,
+                        _ => panic!("Expected between 1 and 2 pairs of matched cards")
+                    }
+                }
+            },
+            1 => HandType::HighCard,
+            _ => panic!("Expected between 1 and 5 cards to match in a hand")
+        }
+    }
+}
+impl TryFrom<(&str, u32)> for JokerHand {
+    type Error = &'static str;
+    fn try_from((chars, bet): (&str, u32)) -> Result<Self, Self::Error> {
+        if chars.len() != 5 {
+            Err("expected five cards in a hand")
+        } else {
+            let cards = chars.bytes().map(|b|
+                TryInto::<JokerCard>::try_into(b)
+            ).collect::<Result<_, _>>()?;
+            let hand_type = Self::get_hand_type(&cards);
+            Ok(Self {cards, bet, hand_type})
+        }
+    }
+}
+impl PartialEq for JokerHand {
+    fn eq(&self, other: &Self) -> bool {
+        self.cards == other.cards
+    }
+}
+impl Eq for JokerHand {}
+impl PartialOrd for JokerHand {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for JokerHand {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.hand_type.cmp(&other.hand_type) {
+            Ordering::Equal => {},
+            ord => return ord,
+        };
+        self.cards.iter().zip_eq(other.cards.iter()).map(|(card, other_card)| {
+            card.cmp(other_card)
+        }).find_or_last(|&order| {
+            order != Ordering::Equal
+        }).unwrap()
+    }
+}
+
+fn parse_joker_line(input: &str) -> IResult<&str, JokerHand> {
+    map_res(separated_pair(
+        take(5u32),
+        space1,
+        parse_u32
+    ), |h| h.try_into())(input)
+}
+
+fn parse_part2(input: &str) -> Vec<JokerHand> {
+    let (_, hands) = all_consuming(
+        separated_list1(line_ending, parse_joker_line)
+    )(input).unwrap();
+
+    hands
+}
+
 #[aoc(day7, part2)]
 fn part2(input: &str) -> u32 {
-    todo!()
+    let mut hands = parse_part2(input);
+    
+    hands.sort_unstable();
+
+    hands.into_iter().enumerate().fold(0, |acc, (ix, hand)| {
+        acc + (hand.bet * (1 + ix as u32))
+    })
 }
 
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parser_test() {
-        
-    }
 
     #[test]
     fn part1_example() {
