@@ -1,7 +1,6 @@
 use std::{collections::HashMap, ops::ControlFlow, cell::RefCell, rc::{Rc, Weak}};
 
 use aoc_runner_derive::aoc;
-use itertools::Itertools;
 use nom::{IResult, combinator::{map_res, all_consuming, map}, multi::{separated_list1, many_till, many1}, character::complete::{line_ending, one_of}, bytes::complete::{take, tag}, sequence::{tuple, separated_pair}};
 
 
@@ -168,19 +167,21 @@ fn part2(input: &str) -> u64 {
         }
     });
 
-    let ControlFlow::Break(steps) = directions.iter().cycle().try_fold((0, starting_nodes), |(steps, curr_nodes), &dir| {
-        if curr_nodes.iter().all(|node| node.location.is_some_and(|loc| loc == NodeType::Ending)) {
-            ControlFlow::Break(steps)
+    starting_nodes.into_iter().map(|node| {
+        if let ControlFlow::Break(fold_val) = directions.iter().cycle().try_fold(
+            (node, 0u64),
+            |(curr_node, steps), &dir| {
+                if let Some(NodeType::Ending) = curr_node.location {
+                    ControlFlow::Break(steps)
+                } else {
+                    ControlFlow::Continue((curr_node.get(dir), steps + 1))
+                }
+        }) {
+            fold_val
         } else {
-            ControlFlow::Continue((steps + 1, curr_nodes.into_iter().map(|node| {
-                node.get(dir)
-            }).collect_vec()))
+            panic!("broke out of infinite loop without result?");
         }
-    }) else {
-        panic!("broke out of infinite loop without result?");
-    };
-
-    steps
+    }).reduce(num::integer::lcm).unwrap()
 }
 
 
