@@ -101,7 +101,7 @@ fn num_possibilities_memoized(input: SpringRow, memoized: &mut HashMap<SpringRow
         0
     } else if cells.len() == min_remaining_cells {
         // println!("maybe one possibility left due to length");
-        let expected = rules.into_iter().map(|&rule| { vec![Spring::Damaged; rule] }).intersperse(vec![Spring::Operational]).flatten();
+        let expected = Itertools::intersperse(rules.into_iter().map(|&rule| { vec![Spring::Damaged; rule] }), vec![Spring::Operational]).flatten();
         if expected.zip_eq(cells).all(|(first, second)| { second.can_be(first) }) { 1 } else { 0 }
     } else {
         match memoized.get(&input).cloned() {
