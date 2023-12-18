@@ -113,7 +113,7 @@ fn part1(input: &str) -> u64 {
         if (0..=node.history.count).filter_map(|dir_steps| {
             let more_permissive_history = TravelHistory { dir: node.history.dir, count: dir_steps };
             min_cost.get(&(node.loc, more_permissive_history))
-        }).any(|&past_cost| past_cost < node.cost) {
+        }).any(|&past_cost| past_cost <= node.cost) {
             continue;
         }
 
