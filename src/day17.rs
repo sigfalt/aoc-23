@@ -2,7 +2,6 @@
 use std::collections::{BinaryHeap, HashMap};
 
 use aoc_runner_derive::aoc;
-use itertools::Itertools;
 use nom::{IResult, combinator::{all_consuming, map_res}, character::complete::{one_of, multispace1}, multi::{separated_list1, many1}};
 
 
